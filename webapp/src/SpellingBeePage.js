@@ -24,6 +24,9 @@ function SpellingBeePage() {
     return (
         <div class="outer container-fluid" style={{border: "2px solid black"}}>
             <div class="row">
+                <button onClick={clickButton}>Fetch</button>
+            </div>
+            <div class="row">
                 <div class="col-md-6 inner">
                     <div class="col-md-12 inner">
                         WORDS: 41, POINTS: 173, PANGRAMS: 1, BINGO
