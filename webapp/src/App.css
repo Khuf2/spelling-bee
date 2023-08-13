@@ -1,0 +1,29 @@
+html, body, .App, .Content {
+    height: 100%;
+    width: 100%;
+}
+
+.App {
+  text-align: center;
+  background-color: #d6bb63;
+}
+
+.App-header {
+  background-color: #282c34;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+.outer {
+  align-self: center;
+  border: 2px dashed orange;
+}
+
+.inner {
+  border: 2px solid black;
+}
