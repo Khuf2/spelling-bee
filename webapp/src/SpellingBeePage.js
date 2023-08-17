@@ -1,58 +1,96 @@
-
+import { useState, useEffect } from 'react';
 /* We should check the model passed from the frontend to see what page this directs to.
 * This will only be one page for the moment but there's definitely potential for more.
 */
 function SpellingBeePage() {
-    function clickButton() {
-      fetch('/guest')
-            .then(response => response.text())
+    // State hook variables
+    const [letters, setLetters] = useState([])
+    const [coreLetter, setCoreLetter] = useState("")
+    const [matrix, setMatrix] = useState([])
+    const [prefixes, setPrefixes] = useState({})
+    const [summary, setSummary] = useState({})
+    const [foundWords, setFoundWords] = useState([])
+    const [points, setPoints] = useState(0)
+    const [date, setDate] = useState("")
+
+    useEffect(() => {
+        getInitialModel();
+    }, []);
+
+    function getInitialModel() {
+        fetch('/model')
+            .then(response => response.json())
             .then(data => {
-              console.log("Fetched something.")
-              console.log(data)
+              console.log("Fetched something.");
+              console.log(data);
+              console.log(data["matrix"])
+              setLetters(data["letters"]);
+              setCoreLetter(data["coreLetter"]);
+              setMatrix(data["matrix"]);
+              setPrefixes(data["prefixes"]);
+              setSummary(data["summary"]);
+              setFoundWords(data["foundWords"]);
+              setPoints(data["points"]);
+              setDate(data["date"]);
+              console.log(matrix)
             })
     }
 
-    function clickButton() {
-      fetch('/guest')
-            .then(response => response.text())
-            .then(data => {
-              console.log("Fetched something.")
-              console.log(data)
-            })
+    function buildMatrixTable() {
+        console.log(matrix)
+        var rows = matrix.map(function (item, i) {
+            var entry = item.map(function (element, j) {
+                return (
+                    <td key={j}> {element} </td>
+                );
+            });
+            return (
+                <tr key={i}> {entry} </tr>
+            );
+        });
+        return (
+            <div>
+                <table className="table-hover table-striped table-bordered">
+                    <tbody>
+                        {rows}
+                    </tbody>
+                </table>
+            </div>
+        );
     }
 
     return (
-        <div class="outer container-fluid" style={{border: "2px solid black"}}>
-            <div class="row">
-                <button onClick={clickButton}>Fetch</button>
+        <div className="outer container-fluid" style={{border: "2px solid black"}}>
+            <div className="row">
+                <button onClick={getInitialModel}>TestInitModel</button>
             </div>
-            <div class="row">
-                <div class="col-md-6 inner">
-                    <div class="col-md-12 inner">
-                        WORDS: 41, POINTS: 173, PANGRAMS: 1, BINGO
+            <div className="row">
+                <div className="col-md-6 inner">
+                    <div className="col-md-12 inner">
+                        Summary
                     </div>
-                    <div class="col-md-12 inner">
+                    <div className="col-md-12 inner">
                         Input
                     </div>
                 </div>
-                <div class="col-md-6 inner">
-                    Matrix
+                <div className="col-md-6 inner">
+                    {buildMatrixTable}
                 </div>
             </div>
-            <div class="row">
-                <div class="col-md-6 inner">
-                    Grid
+            <div className="row">
+                <div className="col-md-6 inner">
+                    {letters}
                 </div>
-                <div class="col-md-6 inner">
+                <div className="col-md-6 inner">
                     Prefixes
                 </div>
             </div>
-            <div class="row">
-                <div class="col-md-6 inner">
-                    Points
+            <div className="row">
+                <div className="col-md-6 inner">
+                    {points}
                 </div>
-                <div class="col-md-6 inner">
-                    Found words
+                <div className="col-md-6 inner">
+                    Found Words
                 </div>
             </div>
         </div>

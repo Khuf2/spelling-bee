@@ -1,11 +1,14 @@
 package com.nyt.spellingbee.helper
 
+import com.nyt.spellingbee.models.SpellingBeeModel
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.select.Elements
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.URL
+import java.util.*
+import java.util.Calendar.*
 
 /*
  * This file will contain the JSoup code to parse the HTML retrieved from 
@@ -20,7 +23,6 @@ class NYTParser() {
     private val hintsDoc: Document = Jsoup.connect("https://www.nytimes.com/2023/08/13/crosswords/spelling-bee-forum.html").get()
     private val paragraphs: Elements
     private val matrix: Elements
-    private var webStr: String
     private val answerChunk: String
 
     // initializer block
@@ -31,7 +33,7 @@ class NYTParser() {
         matrix = meteredContent.select("table")
 
         // Content from Spelling Bee page (needs javascript)
-        webStr = ""
+        var webStr = ""
         val url = URL("https://www.nytimes.com/puzzles/spelling-bee")
         val connection = url.openConnection()
         BufferedReader(InputStreamReader(connection.getInputStream())).use { inp ->
@@ -54,7 +56,7 @@ class NYTParser() {
         return listOf(*letterStr.split(" ").toTypedArray<String>())
     }
 
-    fun getSummary(): Map<String, String> {
+    fun getSummary(): MutableMap<String, String> {
         val summaryText = paragraphs[2].text()
         val summaryList = listOf(*summaryText.split(",").toTypedArray<String>())
         val summaryMap: MutableMap<String, String> = mutableMapOf()
@@ -69,7 +71,7 @@ class NYTParser() {
         return summaryMap
     }
 
-    fun getPrefixes(): Map<String, Int> {
+    fun getPrefixes(): MutableMap<String, Int> {
         val prefixList = paragraphs[4].text().replace("\n", "").split(" ")
         val prefixMap: MutableMap<String, Int> = mutableMapOf()
         for(prefix in prefixList) {
@@ -114,7 +116,11 @@ class NYTParser() {
         return listOf()
     }
 
-    fun buildSpellingBeeModel() {
+    /*
+     * This method builds a spelling bee model from scratch
+     * We'll need to modify or add another method to build from a json save.
+     */
+    fun buildSpellingBeeModel(): SpellingBeeModel {
         // Creates a new model, builds it by calling other functions
         // Returns model to be used by SpellingBeeController
         val letters = getLetters()
@@ -124,9 +130,11 @@ class NYTParser() {
         var matrix = getMatrix()
         var answers = getAnswers()
         // TODO
-        var foundWords: List<String>
+        var foundWords: MutableList<String> = mutableListOf()
         // TODO
-        var points: Int
+        var points: Int = 0
+        val date = "${getInstance().get(MONTH)} ${getInstance().get(DAY_OF_MONTH)}, ${getInstance().get(YEAR)}"
 
+        return SpellingBeeModel(letters, coreLetter, matrix, prefixes, summary, foundWords, points, date)
     }
 }
