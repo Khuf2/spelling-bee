@@ -1,16 +1,15 @@
 package com.nyt.spellingbee.controllers
 
 import com.nyt.spellingbee.helper.NYTParser
-import com.nyt.spellingbee.models.SimpleModel
-import com.nyt.spellingbee.utils.ObjectMapper
+import com.nyt.spellingbee.models.SpellingBeeModel
+import jakarta.servlet.ServletException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
-import org.springframework.web.bind.annotation.ResponseBody
 import org.springframework.web.bind.annotation.RestController
+import java.io.File
 
 @RestController
 class SpellingBeeController(private val nytParser: NYTParser) {
@@ -20,71 +19,87 @@ class SpellingBeeController(private val nytParser: NYTParser) {
      */
     @GetMapping("/model")
     fun getInitialModel(): String {
-        val spellingBeeModel = nytParser.buildSpellingBeeModel()
-        return Json.encodeToString(spellingBeeModel)
+        return if(isSaveCurrent()) {
+            Json.encodeToString(nytParser.deserializeSaveFile())
+        } else {
+            val spellingBeeModel = nytParser.buildSpellingBeeModel()
+            saveFound(spellingBeeModel)
+            Json.encodeToString(spellingBeeModel)
+        }
     }
 
     @PostMapping("/guess")
-    fun submitGuess() {
-        return
-        // Return a successful response if correct
-        // Otherwise, return failure response with status message (reason)
+    fun submitGuess(guess: String): SpellingBeeModel {
+        // TODO: Testing needed, set up frontend to call POST
+        // Load SpellingBeeModel from save
+        val spellingBeeModel = nytParser.deserializeSaveFile()
+        if(guess.length < 4) {
+            throw ServletException("Guess must be at least 4 letters.")
+        }
+        if(guess.contains(spellingBeeModel.centerLetter)) {
+            throw ServletException("Guess must include ${spellingBeeModel.centerLetter.uppercase()}.")
+        }
+        for(letter in guess) {
+            if(letter.toString() !in spellingBeeModel.letters) {
+                throw ServletException("Guess must only include valid letters.")
+            }
+        }
+        if(guess in spellingBeeModel.foundWords) {
+            throw ServletException("Guess has already been found.")
+        }
+        if(guess !in spellingBeeModel.answers) {
+            throw ServletException("Guess was not accepted.")
+        } else {
+            // Update matrix
+            val startingLetter = "${guess[0]}"
+            val letterIndex = spellingBeeModel.letters.indexOf(startingLetter)+1
+            spellingBeeModel.matrix[letterIndex][guess.length-3] = "${spellingBeeModel.matrix[letterIndex][guess.length-3].toInt()-1}"
+            spellingBeeModel.matrix[letterIndex][spellingBeeModel.matrix[letterIndex].size-1] = "${spellingBeeModel.matrix[letterIndex][spellingBeeModel.matrix[letterIndex].size-1].toInt()-1}"
+            spellingBeeModel.matrix[8][guess.length-3] = "${spellingBeeModel.matrix[8][guess.length-3].toInt()-1}"
+            spellingBeeModel.matrix[8][spellingBeeModel.matrix[letterIndex].size-1] = "${spellingBeeModel.matrix[8][spellingBeeModel.matrix[letterIndex].size-1].toInt()-1}"
+
+            // Update prefixes
+            val prefix = guess.substring(0, 2).uppercase()
+            spellingBeeModel.prefixes[prefix] = spellingBeeModel.prefixes[prefix]!! - 1
+
+            // Update found
+            spellingBeeModel.foundWords.add(guess)
+
+            // Save updated model
+            saveFound(spellingBeeModel)
+
+            return spellingBeeModel
+        }
     }
 
-    @PostMapping("/save")
-    fun saveFound() {
-        return
-        // Save the list of found words from the UI state to a backend file
+    fun saveFound(spellingBeeModel: SpellingBeeModel) {
+        // TODO: Need to figure out how to write to a specific "save" directory
+        val file = File("save.json")
+        if(file.exists()) {
+            file.writeText(Json.encodeToString(spellingBeeModel))
+        } else {
+            file.createNewFile()
+            file.writeText(Json.encodeToString(spellingBeeModel))
+        }
     }
 
+    fun isSaveCurrent(): Boolean {
+        val file = File("save.json")
+        if(file.exists()) {
+            val spellingBeeModel = nytParser.deserializeSaveFile()
+            // TODO: We need to get the current time, ideally WITHOUT getting puzzle model again
+            if(spellingBeeModel.date == nytParser.getDailyPuzzleModel().displayDate) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /**
+     * Test endpoint
+     */
     @GetMapping("/guest")
     fun getGuest(): ResponseEntity<String> {
         return ResponseEntity.ok("Guest.")
-        // Return some base page
-    }
-
-    @GetMapping("/parse/str")
-    fun parseStr(): ResponseEntity<String> {
-        val webpageText = nytParser.testOutput()
-        return ResponseEntity.ok(webpageText)
-    }
-
-    @GetMapping("/parse/list")
-    fun parseList(): ResponseEntity<String> {
-        val webpageText = nytParser.getAnswers()
-        var str = ""
-        for(item in webpageText) {
-            str += "${item}\n"
-        }
-        return ResponseEntity.ok("${str}**${webpageText.size}")
-    }
-
-    @GetMapping("/parse/map")
-    fun parseMap(): ResponseEntity<String> {
-        val webpageText = nytParser.getPrefixes()
-        var str = ""
-        for(item in webpageText) {
-            str += "(${item.key}, ${item.value})\n"
-        }
-        return ResponseEntity.ok("${str}**${webpageText.size}")
-    }
-
-    @GetMapping("/parse/bee", produces = [MediaType.TEXT_PLAIN_VALUE])
-    @ResponseBody
-    fun parseBee(): String {
-        return ""
-    }
-
-    @GetMapping("/parse/matrix")
-    fun parseMatrix(): ResponseEntity<String> {
-        val matrix = nytParser.getMatrix()
-        var str = ""
-        for(row in matrix) {
-            for(cell in row) {
-                str += "${cell}."
-            }
-            str += " <**> "
-        }
-        return ResponseEntity.ok(str)
     }
 }

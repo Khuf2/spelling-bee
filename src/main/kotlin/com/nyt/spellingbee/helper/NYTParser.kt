@@ -1,37 +1,24 @@
 package com.nyt.spellingbee.helper
 
+import com.fasterxml.jackson.core.JsonProcessingException
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
+import com.nyt.spellingbee.models.DailyPuzzleModel
 import com.nyt.spellingbee.models.SpellingBeeModel
-import org.jsoup.Jsoup
-import org.jsoup.nodes.Document
-import org.jsoup.select.Elements
+import jakarta.servlet.ServletException
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
 import java.net.URL
-import java.util.*
-import java.util.Calendar.*
 
-/*
- * This file will contain the JSoup code to parse the HTML retrieved from 
- * https://www.nytimes.com/puzzles/spelling-bee
+/**
+ * Parses data from the NYT Spelling Bee puzzle page and creates an initial
+ * SpellingBeeModel to be saved as a json file.
  */
-
-// TODO: We may eventually want to sanity-check and trim whitespace(s)
 class NYTParser() {
-    // Find div with class 'pz-game-screen'
-    // Find search text as first child with script type, non-recursively
-    // Initialize coreLetter and letters to Null and {}
-    private val hintsDoc: Document = Jsoup.connect("https://www.nytimes.com/2023/08/13/crosswords/spelling-bee-forum.html").get()
-    private val paragraphs: Elements
-    private val matrix: Elements
-    private val answerChunk: String
+    private val dailyPuzzleModel: DailyPuzzleModel
 
-    // initializer block
     init {
-        // Content from hints page
-        val meteredContent = hintsDoc.select("section.meteredContent")
-        paragraphs = meteredContent.select("p.content")
-        matrix = meteredContent.select("table")
-
         // Content from Spelling Bee page (needs javascript)
         var webStr = ""
         val url = URL("https://www.nytimes.com/puzzles/spelling-bee")
@@ -42,72 +29,84 @@ class NYTParser() {
                 webStr += "${line}\n"
             }
         }
-        answerChunk = webStr.substring(webStr.indexOf("\"answers\":")+10, webStr.indexOf(",\"id\"")).trim('[').trim(']')
+        val dailyPuzzleStr = webStr.substring(webStr.indexOf("\"today\":")+8, webStr.indexOf(",\"yesterday\""))
+        dailyPuzzleModel = deserializeDailyPuzzle(dailyPuzzleStr)
     }
 
-    fun testOutput(): String {
-        return "Paragraphs: ${paragraphs.size}, Matrix: ${matrix.size}"
+    fun getDailyPuzzleModel(): DailyPuzzleModel {
+        return dailyPuzzleModel
     }
 
     fun getLetters(): List<String> {
-        // Get string of all 7 letters
-        val letterStr = paragraphs[1].text().uppercase()
-        // Split string into List of letters
-        return listOf(*letterStr.split(" ").toTypedArray<String>())
+        return dailyPuzzleModel.validLetters
     }
 
     fun getSummary(): MutableMap<String, String> {
-        val summaryText = paragraphs[2].text()
-        val summaryList = listOf(*summaryText.split(",").toTypedArray<String>())
-        val summaryMap: MutableMap<String, String> = mutableMapOf()
-        for(i in 0 until summaryList.size-1) {
-            val split = listOf(*summaryList[i].split(": ").toTypedArray<String>())
-            summaryMap[split[0].trim()] = split[1]
-        }
-        // Check for presence of Bingo in summary
-        if(summaryList.size > 3) {
-            summaryMap["Bingo"] = "True"
-        }
-        return summaryMap
+        return mutableMapOf("Words" to "${dailyPuzzleModel.answers.size}", "Points" to "<Add later>", "Pangrams" to "${dailyPuzzleModel.pangrams.size}")
     }
 
     fun getPrefixes(): MutableMap<String, Int> {
-        val prefixList = paragraphs[4].text().replace("\n", "").split(" ")
         val prefixMap: MutableMap<String, Int> = mutableMapOf()
-        for(prefix in prefixList) {
-            val split = listOf(*prefix.split("-").toTypedArray())
-            prefixMap[split[0].uppercase()] = split[1].toInt()
+        for(word in dailyPuzzleModel.answers) {
+            val prefix = word.substring(0, 2).uppercase()
+            when (val count = prefixMap[prefix])
+            {
+                null -> prefixMap[prefix] = 1
+                else -> prefixMap[prefix] = count + 1
+            }
         }
-        return prefixMap
+        return prefixMap.toSortedMap()
     }
 
     fun getMatrix(): MutableList<MutableList<String>> {
         val matrixList: MutableList<MutableList<String>> = mutableListOf()
-        val rows = matrix[0].select("tr.row")
-        for(row in rows) {
-            val cells = row.select("td.cell")
-            val matrixRow: MutableList<String> = mutableListOf()
-            for(cell in cells) {
-                val cellText = cell.text().replace(":", "")
-                if(cellText.toDoubleOrNull() != null) {
-                    matrixRow.add(cellText)
-                } else {
-                    matrixRow.add(cellText.uppercase())
+        // Find length of longest word in answers
+        var longestWord = 4
+        for(word in dailyPuzzleModel.answers) {
+            if(word.length > longestWord) {
+                longestWord = word.length
+            }
+        }
+        for(i in 0..8) {
+            when (i) {
+                0 -> {
+                    matrixList.add(mutableListOf("  "))
+                    for(j in 4..longestWord) {
+                        matrixList[i].add("$j")
+                    }
+                    matrixList[i].add("^ ")
+                }
+                8 -> {
+                    matrixList.add(mutableListOf("^ "))
+                    for(j in 4..longestWord+1) {
+                        matrixList[i].add("0")
+                    }
+                }
+                else -> {
+                    matrixList.add(mutableListOf(dailyPuzzleModel.validLetters[i-1].uppercase()))
+                    for(j in 4..longestWord+1) {
+                        matrixList[i].add("0")
+                    }
                 }
             }
-            matrixList.add(matrixRow)
         }
+
+        // Run through answers and fill matrix
+        for(word in dailyPuzzleModel.answers) {
+            val startingLetter = "${word[0]}"
+            val letterIndex = dailyPuzzleModel.validLetters.indexOf(startingLetter)+1
+            // TODO: Add hyphens for 0s considering we're using strings
+            matrixList[letterIndex][word.length-3] = "${matrixList[letterIndex][word.length-3].toInt()+1}"
+            matrixList[letterIndex][matrixList[letterIndex].size-1] = "${matrixList[letterIndex][matrixList[letterIndex].size-1].toInt()+1}"
+            matrixList[8][word.length-3] = "${matrixList[8][word.length-3].toInt()+1}"
+            matrixList[8][matrixList[letterIndex].size-1] = "${matrixList[8][matrixList[letterIndex].size-1].toInt()+1}"
+        }
+
         return matrixList
     }
 
-    // webStr [HTML doc from response] is GOOD
-    // JSoup.parse(webStr) is NOT GOOD [results in
-    fun getAnswers(): MutableList<String> {
-        val answersList: MutableList<String> = mutableListOf()
-        for(answer in answerChunk.split(",")) {
-            answersList.add(answer.trim('\"'))
-        }
-        return answersList
+    fun getAnswers(): List<String> {
+        return dailyPuzzleModel.answers
     }
 
     // TODO
@@ -123,18 +122,51 @@ class NYTParser() {
     fun buildSpellingBeeModel(): SpellingBeeModel {
         // Creates a new model, builds it by calling other functions
         // Returns model to be used by SpellingBeeController
-        val letters = getLetters()
-        val coreLetter = getLetters()[0]
         var summary = getSummary()
         var prefixes = getPrefixes()
         var matrix = getMatrix()
-        var answers = getAnswers()
         // TODO
         var foundWords: MutableList<String> = mutableListOf()
         // TODO
         var points: Int = 0
-        val date = "${getInstance().get(MONTH)} ${getInstance().get(DAY_OF_MONTH)}, ${getInstance().get(YEAR)}"
+        var answers = dailyPuzzleModel.answers
 
-        return SpellingBeeModel(letters, coreLetter, matrix, prefixes, summary, foundWords, points, date)
+        return SpellingBeeModel(
+                dailyPuzzleModel.validLetters,
+                dailyPuzzleModel.centerLetter,
+                matrix,
+                prefixes,
+                summary,
+                foundWords,
+                points,
+                dailyPuzzleModel.displayDate,
+                answers
+        )
+    }
+
+    private fun deserializeDailyPuzzle(puzzleStr: String): DailyPuzzleModel {
+        val myMapper = jacksonObjectMapper()
+        val dailyPuzzleModel: DailyPuzzleModel
+        try {
+            dailyPuzzleModel = myMapper.readValue(puzzleStr)
+        } catch (e: JsonProcessingException) {
+            throw ServletException("Error deserializing daily puzzle information from NYT website.")
+        }
+        dailyPuzzleModel.outerLetters = dailyPuzzleModel.outerLetters.sorted()
+        dailyPuzzleModel.validLetters = dailyPuzzleModel.validLetters.sorted()
+        return dailyPuzzleModel
+    }
+
+    fun deserializeSaveFile(): SpellingBeeModel {
+        val file = File("save.json")
+        val myMapper = jacksonObjectMapper()
+        val spellingBeeModel: SpellingBeeModel
+        try {
+            spellingBeeModel = myMapper.readValue(file.readText())
+        } catch (e: JsonProcessingException) {
+            throw ServletException("Error deserializing spelling bee model from save file.")
+        }
+
+        return spellingBeeModel
     }
 }
